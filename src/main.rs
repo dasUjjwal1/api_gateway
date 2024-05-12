@@ -1,17 +1,3 @@
-// Copyright 2024 Cloudflare, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 use async_trait::async_trait;
 use log::info;
 use pingora::{http::ResponseHeader, prelude::*, services::listening::Service};
@@ -47,12 +33,12 @@ impl ProxyHttp for MyGateway {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> Result<Box<HttpPeer>> {
-        let addr = if session.req_header().uri.path().starts_with("/service-1") {
-            ("127.0.0.1", 8080)
-        } else {
-            ("1.1.1.1", 443)
+        let path_name = session.req_header().uri.path();
+        let addr = match path_name {
+            p if p.starts_with("/user-service") => ("127.0.0.1", 8080),
+            p if p.starts_with("/otp-service") => ("127.0.0.1", 8081),
+            _ => ("1.1.1.1", 443),
         };
-        info!("connecting to {addr:?}");
 
         let peer = Box::new(HttpPeer::new(addr, false, "one.one.one.one".to_string()));
         Ok(peer)
@@ -71,7 +57,6 @@ impl ProxyHttp for MyGateway {
         upstream_response
             .insert_header("Server", "MyGateway")
             .unwrap();
-        // because we don't support h3
         upstream_response.remove_header("alt-svc");
 
         Ok(())
@@ -88,17 +73,8 @@ impl ProxyHttp for MyGateway {
     }
 }
 
-// RUST_LOG=INFO cargo run --example load_balancer
-// curl 127.0.0.1:6191 -H "Host: one.one.one.one"
-// curl 127.0.0.1:6190/family/ -H "Host: one.one.one.one"
-// curl 127.0.0.1:6191/login/ -H "Host: one.one.one.one" -I -H "Authorization: password"
-// curl 127.0.0.1:6191/login/ -H "Host: one.one.one.one" -I -H "Authorization: bad"
-// For metrics
-// curl 127.0.0.1:6192/
 fn main() {
-    // read command line arguments
-    let opt = Opt::default();
-    let mut my_server = Server::new(Some(opt)).unwrap();
+    let mut my_server = Server::new(None).unwrap();
     my_server.bootstrap();
 
     let mut my_proxy = http_proxy_service(
